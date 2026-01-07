@@ -6,18 +6,46 @@ from .base import BaseExchange
 
 
 class BinanceExchange(BaseExchange):
-    """Binance exchange adapter."""
+    """Binance exchange adapter with Binance.US fallback."""
 
     name = "binance"
     quote_asset = "USDT"
-    base_url = "https://api.binance.com/api/v3"
+
+    # Try main Binance first, fall back to Binance.US for geo-restricted regions
+    base_urls = [
+        "https://api.binance.com/api/v3",
+        "https://api.binance.us/api/v3"
+    ]
+
+    def __init__(self):
+        super().__init__()
+        self.base_url = None  # Will be set on first successful request
+
+    def _request(self, endpoint: str, params: dict = None, timeout: int = 30):
+        """Make request with automatic fallback to Binance.US."""
+        urls_to_try = [self.base_url] if self.base_url else self.base_urls
+
+        for base_url in urls_to_try:
+            try:
+                url = f"{base_url}{endpoint}"
+                response = requests.get(url, params=params, timeout=timeout)
+
+                # 451 = geo-restricted, try next URL
+                if response.status_code == 451:
+                    continue
+
+                response.raise_for_status()
+                self.base_url = base_url  # Remember working URL
+                return response.json()
+
+            except requests.exceptions.RequestException:
+                continue
+
+        raise Exception("Binance API unavailable (geo-restricted). Try Coinbase or Kraken.")
 
     def get_all_pairs(self) -> list:
         """Fetch all USDT trading pairs from Binance."""
-        url = f"{self.base_url}/exchangeInfo"
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        data = self._request("/exchangeInfo")
 
         usdt_pairs = []
         for symbol in data['symbols']:
@@ -30,10 +58,7 @@ class BinanceExchange(BaseExchange):
 
     def get_24h_volumes(self) -> dict:
         """Get 24h volume for all pairs."""
-        url = f"{self.base_url}/ticker/24hr"
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        data = self._request("/ticker/24hr")
 
         volumes = {}
         for ticker in data:
@@ -44,7 +69,6 @@ class BinanceExchange(BaseExchange):
 
     def get_klines(self, symbol: str, interval: str = '1w', limit: int = 100) -> pd.DataFrame:
         """Fetch OHLCV data from Binance."""
-        url = f"{self.base_url}/klines"
         params = {
             'symbol': symbol,
             'interval': interval,
@@ -52,8 +76,7 @@ class BinanceExchange(BaseExchange):
         }
 
         try:
-            response = requests.get(url, params=params, timeout=10)
-            data = response.json()
+            data = self._request("/klines", params=params, timeout=10)
 
             if isinstance(data, dict) and 'code' in data:
                 return None

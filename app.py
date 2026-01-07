@@ -194,7 +194,8 @@ def index():
 def api_scan():
     """API endpoint to run a scan with SSE progress updates."""
     exchange_name = request.args.get('exchange', 'binance')
-    timeframe = request.args.get('timeframe', '1w')
+    timeframes_str = request.args.get('timeframes', '1w,2w')
+    timeframes = [tf.strip() for tf in timeframes_str.split(',') if tf.strip()]
     min_volume = float(request.args.get('min_volume', MIN_VOLUME_USD))
 
     def generate():
@@ -211,60 +212,65 @@ def api_scan():
 
             # Filter pairs
             active_pairs = [p for p in all_pairs if volumes.get(p, 0) >= min_volume]
-            total = len(active_pairs)
 
-            yield f"data: {json.dumps({'type': 'init', 'total': total, 'exchange': exchange.name})}\n\n"
+            # Scan each timeframe
+            for timeframe in timeframes:
+                total = len(active_pairs)
+                yield f"data: {json.dumps({'type': 'init', 'total': total, 'exchange': exchange.name, 'timeframe': timeframe.upper()})}\n\n"
 
-            results = {
-                'exchange': exchange.name,
-                'timeframe': timeframe,
-                'total_pairs': len(all_pairs),
-                'filtered_pairs': total,
-                'bullish_now': [],
-                'bearish_now': [],
-                'bullish_recent': [],
-                'bearish_recent': [],
-                'errors': []
-            }
-
-            completed = 0
-
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                future_to_symbol = {
-                    executor.submit(scan_symbol, symbol, exchange, timeframe): symbol
-                    for symbol in active_pairs
+                results = {
+                    'exchange': exchange.name,
+                    'timeframe': timeframe,
+                    'total_pairs': len(all_pairs),
+                    'filtered_pairs': total,
+                    'bullish_now': [],
+                    'bearish_now': [],
+                    'bullish_recent': [],
+                    'bearish_recent': [],
+                    'errors': []
                 }
 
-                for future in as_completed(future_to_symbol):
-                    symbol = future_to_symbol[future]
-                    completed += 1
+                completed = 0
 
-                    # Send progress update
-                    yield f"data: {json.dumps({'type': 'progress', 'completed': completed, 'total': total, 'symbol': exchange.display_symbol(symbol)})}\n\n"
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_symbol = {
+                        executor.submit(scan_symbol, symbol, exchange, timeframe): symbol
+                        for symbol in active_pairs
+                    }
 
-                    try:
-                        result = future.result()
-                        if result is None:
-                            continue
+                    for future in as_completed(future_to_symbol):
+                        symbol = future_to_symbol[future]
+                        completed += 1
 
-                        if result['latest_signal'] == 1:
-                            results['bullish_now'].append(result)
-                        elif result['latest_signal'] == -1:
-                            results['bearish_now'].append(result)
-                        elif result['recent_bullish']:
-                            results['bullish_recent'].append(result)
-                        elif result['recent_bearish']:
-                            results['bearish_recent'].append(result)
+                        # Send progress update
+                        yield f"data: {json.dumps({'type': 'progress', 'completed': completed, 'total': total, 'symbol': exchange.display_symbol(symbol), 'timeframe': timeframe.upper()})}\n\n"
 
-                    except Exception as e:
-                        results['errors'].append({'symbol': symbol, 'error': str(e)})
+                        try:
+                            result = future.result()
+                            if result is None:
+                                continue
 
-            # Sort results
-            for key in ['bullish_now', 'bearish_now', 'bullish_recent', 'bearish_recent']:
-                results[key] = sorted(results[key], key=lambda x: x.get('display_symbol', x['symbol']))
+                            if result['latest_signal'] == 1:
+                                results['bullish_now'].append(result)
+                            elif result['latest_signal'] == -1:
+                                results['bearish_now'].append(result)
+                            elif result['recent_bullish']:
+                                results['bullish_recent'].append(result)
+                            elif result['recent_bearish']:
+                                results['bearish_recent'].append(result)
 
-            # Send final results
-            yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
+                        except Exception as e:
+                            results['errors'].append({'symbol': symbol, 'error': str(e)})
+
+                # Sort results
+                for key in ['bullish_now', 'bearish_now', 'bullish_recent', 'bearish_recent']:
+                    results[key] = sorted(results[key], key=lambda x: x.get('display_symbol', x['symbol']))
+
+                # Send timeframe results
+                yield f"data: {json.dumps({'type': 'timeframe_complete', 'results': results})}\n\n"
+
+            # Send final complete signal
+            yield f"data: {json.dumps({'type': 'complete'})}\n\n"
 
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
