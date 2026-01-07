@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeveLeledc Scanner</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            min-height: 100vh;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid #30363d;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(135deg, #58a6ff, #a371f7);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .subtitle {
+            color: #8b949e;
+            font-size: 0.95rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 2rem;
+            padding: 1.5rem;
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .control-group label {
+            font-size: 0.85rem;
+            color: #8b949e;
+            font-weight: 500;
+        }
+
+        select, input {
+            padding: 0.6rem 1rem;
+            font-size: 0.95rem;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            background: #0d1117;
+            color: #e6edf3;
+            min-width: 150px;
+            cursor: pointer;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        select:hover, input:hover {
+            border-color: #58a6ff;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #58a6ff;
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+        }
+
+        .btn {
+            padding: 0.7rem 1.5rem;
+            font-size: 0.95rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #238636, #2ea043);
+            color: white;
+            align-self: flex-end;
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2ea043, #3fb950);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(46, 160, 67, 0.3);
+        }
+
+        .btn-primary:disabled {
+            background: #21262d;
+            color: #484f58;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .spinner {
+            width: 16px;
+            height: 16px;
+            border: 2px solid transparent;
+            border-top-color: currentColor;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .status {
+            text-align: center;
+            padding: 3rem;
+            color: #8b949e;
+        }
+
+        .status-icon {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+
+        .results-grid {
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .result-section {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            overflow: hidden;
+        }
+
+        .section-header {
+            padding: 1rem 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            border-bottom: 1px solid #30363d;
+        }
+
+        .section-header .badge {
+            background: #30363d;
+            padding: 0.2rem 0.6rem;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+
+        .bullish-now .section-header {
+            background: linear-gradient(135deg, rgba(46, 160, 67, 0.15), rgba(46, 160, 67, 0.05));
+            border-left: 3px solid #3fb950;
+        }
+
+        .bearish-now .section-header {
+            background: linear-gradient(135deg, rgba(248, 81, 73, 0.15), rgba(248, 81, 73, 0.05));
+            border-left: 3px solid #f85149;
+        }
+
+        .bullish-recent .section-header {
+            background: linear-gradient(135deg, rgba(210, 153, 34, 0.15), rgba(210, 153, 34, 0.05));
+            border-left: 3px solid #d29922;
+        }
+
+        .bearish-recent .section-header {
+            background: linear-gradient(135deg, rgba(219, 109, 40, 0.15), rgba(219, 109, 40, 0.05));
+            border-left: 3px solid #db6d28;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 0.85rem 1.25rem;
+            text-align: left;
+        }
+
+        th {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #8b949e;
+            font-weight: 600;
+            background: #0d1117;
+        }
+
+        tr:not(:last-child) td {
+            border-bottom: 1px solid #21262d;
+        }
+
+        tr:hover td {
+            background: rgba(88, 166, 255, 0.05);
+        }
+
+        .symbol {
+            font-weight: 600;
+            color: #58a6ff;
+        }
+
+        .price {
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+            color: #e6edf3;
+        }
+
+        .bars-ago {
+            color: #8b949e;
+            font-size: 0.9rem;
+        }
+
+        .scan-info {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 1.5rem;
+            padding: 1rem;
+            background: #161b22;
+            border-radius: 8px;
+            border: 1px solid #30363d;
+        }
+
+        .scan-stat {
+            text-align: center;
+        }
+
+        .scan-stat-value {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+
+        .scan-stat-label {
+            font-size: 0.8rem;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .empty-state {
+            padding: 2rem;
+            text-align: center;
+            color: #8b949e;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            .control-group {
+                width: 100%;
+            }
+
+            select, input {
+                width: 100%;
+            }
+
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+
+            .scan-info {
+                flex-wrap: wrap;
+                gap: 1rem;
+            }
+
+            th, td {
+                padding: 0.6rem 0.8rem;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>LeveLeledc Scanner</h1>
+            <p class="subtitle">Scan crypto markets for exhaustion signals</p>
+        </header>
+
+        <div class="controls">
+            <div class="control-group">
+                <label for="exchange">Exchange</label>
+                <select id="exchange">
+                    {% for ex in exchanges %}
+                    <option value="{{ ex }}">{{ ex|capitalize }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="timeframe">Timeframe</label>
+                <select id="timeframe">
+                    <option value="1w">Weekly (1W)</option>
+                    <option value="2w">Bi-Weekly (2W)</option>
+                </select>
+            </div>
+
+            <div class="control-group">
+                <label for="min-volume">Min Volume (USD)</label>
+                <input type="number" id="min-volume" value="1000000" step="100000">
+            </div>
+
+            <button class="btn btn-primary" id="scan-btn" onclick="runScan()">
+                <span id="btn-text">Scan</span>
+            </button>
+        </div>
+
+        <div id="results">
+            <div class="status">
+                <div class="status-icon">📊</div>
+                <p>Select an exchange and click Scan to find exhaustion signals</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function runScan() {
+            const btn = document.getElementById('scan-btn');
+            const btnText = document.getElementById('btn-text');
+            const resultsDiv = document.getElementById('results');
+
+            const exchange = document.getElementById('exchange').value;
+            const timeframe = document.getElementById('timeframe').value;
+            const minVolume = document.getElementById('min-volume').value;
+
+            // Show loading state
+            btn.disabled = true;
+            btnText.innerHTML = '<span class="spinner"></span> Scanning...';
+            resultsDiv.innerHTML = `
+                <div class="status">
+                    <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 1rem;"></div>
+                    <p>Scanning ${exchange.toUpperCase()} for ${timeframe} exhaustion signals...</p>
+                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">This may take a minute</p>
+                </div>
+            `;
+
+            try {
+                const response = await fetch('/api/scan', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ exchange, timeframe, min_volume: minVolume })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    displayResults(result.data);
+                } else {
+                    resultsDiv.innerHTML = `
+                        <div class="status">
+                            <div class="status-icon">⚠️</div>
+                            <p>Error: ${result.error}</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="status">
+                        <div class="status-icon">❌</div>
+                        <p>Failed to connect to server</p>
+                    </div>
+                `;
+            }
+
+            // Reset button
+            btn.disabled = false;
+            btnText.textContent = 'Scan';
+        }
+
+        function displayResults(data) {
+            const resultsDiv = document.getElementById('results');
+
+            const totalSignals = data.bullish_now.length + data.bearish_now.length +
+                                data.bullish_recent.length + data.bearish_recent.length;
+
+            let html = `
+                <div class="scan-info">
+                    <div class="scan-stat">
+                        <div class="scan-stat-value">${data.exchange.toUpperCase()}</div>
+                        <div class="scan-stat-label">Exchange</div>
+                    </div>
+                    <div class="scan-stat">
+                        <div class="scan-stat-value">${data.filtered_pairs}</div>
+                        <div class="scan-stat-label">Pairs Scanned</div>
+                    </div>
+                    <div class="scan-stat">
+                        <div class="scan-stat-value">${totalSignals}</div>
+                        <div class="scan-stat-label">Signals Found</div>
+                    </div>
+                </div>
+                <div class="results-grid">
+            `;
+
+            // Bullish Now
+            if (data.bullish_now.length > 0) {
+                html += createSection('bullish-now', '🟢 Bullish Exhaustion - Current Bar', data.bullish_now);
+            }
+
+            // Bearish Now
+            if (data.bearish_now.length > 0) {
+                html += createSection('bearish-now', '🔴 Bearish Exhaustion - Current Bar', data.bearish_now);
+            }
+
+            // Bullish Recent
+            if (data.bullish_recent.length > 0) {
+                html += createSection('bullish-recent', '🟡 Bullish Exhaustion - Recent', data.bullish_recent, 'bars_since_bullish');
+            }
+
+            // Bearish Recent
+            if (data.bearish_recent.length > 0) {
+                html += createSection('bearish-recent', '🟠 Bearish Exhaustion - Recent', data.bearish_recent, 'bars_since_bearish');
+            }
+
+            html += '</div>';
+
+            if (totalSignals === 0) {
+                html += `
+                    <div class="status">
+                        <div class="status-icon">✨</div>
+                        <p>No exhaustion signals found</p>
+                    </div>
+                `;
+            }
+
+            resultsDiv.innerHTML = html;
+        }
+
+        function createSection(className, title, items, barsField = null) {
+            const count = items.length;
+            let html = `
+                <div class="result-section ${className}">
+                    <div class="section-header">
+                        <span>${title}</span>
+                        <span class="badge">${count}</span>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Symbol</th>
+                                <th>Price</th>
+                                ${barsField ? '<th>Bars Ago</th>' : ''}
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            for (const item of items) {
+                const symbol = item.display_symbol || item.symbol;
+                const price = formatPrice(item.current_price);
+                const barsAgo = barsField ? item[barsField] : null;
+
+                html += `
+                    <tr>
+                        <td class="symbol">${symbol}</td>
+                        <td class="price">$${price}</td>
+                        ${barsField ? `<td class="bars-ago">${barsAgo !== null ? barsAgo : '-'}</td>` : ''}
+                    </tr>
+                `;
+            }
+
+            html += '</tbody></table></div>';
+            return html;
+        }
+
+        function formatPrice(price) {
+            if (price >= 1) {
+                return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            } else if (price >= 0.0001) {
+                return price.toFixed(6);
+            } else {
+                return price.toExponential(4);
+            }
+        }
+    </script>
+</body>
+</html>
