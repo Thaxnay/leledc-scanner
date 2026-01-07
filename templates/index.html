@@ -275,6 +275,69 @@
             color: #8b949e;
         }
 
+        .progress-container {
+            background: #161b22;
+            border-radius: 12px;
+            border: 1px solid #30363d;
+            padding: 2rem;
+            text-align: center;
+        }
+
+        .progress-header {
+            margin-bottom: 1.5rem;
+        }
+
+        .progress-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-subtitle {
+            color: #8b949e;
+            font-size: 0.9rem;
+        }
+
+        .progress-bar-wrapper {
+            background: #0d1117;
+            border-radius: 8px;
+            height: 12px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #238636, #3fb950);
+            border-radius: 8px;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+
+        .progress-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .progress-count {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #58a6ff;
+        }
+
+        .progress-percent {
+            font-size: 1.1rem;
+            color: #8b949e;
+        }
+
+        .progress-current {
+            color: #8b949e;
+            font-size: 0.85rem;
+            font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 1rem;
@@ -353,7 +416,7 @@
     </div>
 
     <script>
-        async function runScan() {
+        function runScan() {
             const btn = document.getElementById('scan-btn');
             const btnText = document.getElementById('btn-text');
             const resultsDiv = document.getElementById('results');
@@ -362,48 +425,77 @@
             const timeframe = document.getElementById('timeframe').value;
             const minVolume = document.getElementById('min-volume').value;
 
-            // Show loading state
+            // Show initial loading state
             btn.disabled = true;
             btnText.innerHTML = '<span class="spinner"></span> Scanning...';
             resultsDiv.innerHTML = `
-                <div class="status">
-                    <div class="spinner" style="width: 40px; height: 40px; margin: 0 auto 1rem;"></div>
-                    <p>Scanning ${exchange.toUpperCase()} for ${timeframe} exhaustion signals...</p>
-                    <p style="font-size: 0.85rem; margin-top: 0.5rem;">This may take a minute</p>
+                <div class="progress-container">
+                    <div class="progress-header">
+                        <div class="progress-title">Initializing scan...</div>
+                        <div class="progress-subtitle">${exchange.toUpperCase()} - ${timeframe}</div>
+                    </div>
+                    <div class="progress-bar-wrapper">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                    <div class="progress-stats">
+                        <span class="progress-count" id="progress-count">0 / 0</span>
+                        <span class="progress-percent" id="progress-percent">0%</span>
+                    </div>
+                    <div class="progress-current" id="progress-current">Starting...</div>
                 </div>
             `;
 
-            try {
-                const response = await fetch('/api/scan', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ exchange, timeframe, min_volume: minVolume })
-                });
+            // Use Server-Sent Events for real-time progress
+            const url = `/api/scan?exchange=${exchange}&timeframe=${timeframe}&min_volume=${minVolume}`;
+            const eventSource = new EventSource(url);
 
-                const result = await response.json();
+            eventSource.onmessage = function(event) {
+                const data = JSON.parse(event.data);
 
-                if (result.success) {
-                    displayResults(result.data);
-                } else {
+                if (data.type === 'status') {
+                    document.getElementById('progress-current').textContent = data.message;
+                }
+                else if (data.type === 'init') {
+                    document.querySelector('.progress-title').textContent = `Scanning ${data.total} pairs...`;
+                    document.getElementById('progress-count').textContent = `0 / ${data.total}`;
+                }
+                else if (data.type === 'progress') {
+                    const percent = Math.round((data.completed / data.total) * 100);
+                    document.getElementById('progress-bar').style.width = `${percent}%`;
+                    document.getElementById('progress-count').textContent = `${data.completed} / ${data.total}`;
+                    document.getElementById('progress-percent').textContent = `${percent}%`;
+                    document.getElementById('progress-current').textContent = `Scanning ${data.symbol}`;
+                }
+                else if (data.type === 'complete') {
+                    eventSource.close();
+                    displayResults(data.results);
+                    btn.disabled = false;
+                    btnText.textContent = 'Scan';
+                }
+                else if (data.type === 'error') {
+                    eventSource.close();
                     resultsDiv.innerHTML = `
                         <div class="status">
                             <div class="status-icon">⚠️</div>
-                            <p>Error: ${result.error}</p>
+                            <p>Error: ${data.message}</p>
                         </div>
                     `;
+                    btn.disabled = false;
+                    btnText.textContent = 'Scan';
                 }
-            } catch (error) {
+            };
+
+            eventSource.onerror = function() {
+                eventSource.close();
                 resultsDiv.innerHTML = `
                     <div class="status">
                         <div class="status-icon">❌</div>
-                        <p>Failed to connect to server</p>
+                        <p>Connection lost. Please try again.</p>
                     </div>
                 `;
-            }
-
-            // Reset button
-            btn.disabled = false;
-            btnText.textContent = 'Scan';
+                btn.disabled = false;
+                btnText.textContent = 'Scan';
+            };
         }
 
         function displayResults(data) {

@@ -4,10 +4,11 @@ LeveLeledc Scanner - Web UI
 A simple Flask web interface for the crypto exhaustion scanner.
 """
 
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, Response
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 import os
+import json
 
 from exchanges import get_exchange, list_exchanges
 
@@ -189,20 +190,86 @@ def index():
     return render_template('index.html', exchanges=exchanges)
 
 
-@app.route('/api/scan', methods=['POST'])
+@app.route('/api/scan')
 def api_scan():
-    """API endpoint to run a scan."""
-    data = request.get_json()
+    """API endpoint to run a scan with SSE progress updates."""
+    exchange_name = request.args.get('exchange', 'binance')
+    timeframe = request.args.get('timeframe', '1w')
+    min_volume = float(request.args.get('min_volume', MIN_VOLUME_USD))
 
-    exchange = data.get('exchange', 'binance')
-    timeframe = data.get('timeframe', '1w')
-    min_volume = float(data.get('min_volume', MIN_VOLUME_USD))
+    def generate():
+        try:
+            exchange = get_exchange(exchange_name)
 
-    try:
-        results = run_scan(exchange, timeframe, min_volume)
-        return jsonify({'success': True, 'data': results})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+            # Phase 1: Fetching pairs
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Fetching trading pairs...'})}\n\n"
+            all_pairs = exchange.get_all_pairs()
+
+            # Phase 2: Fetching volumes
+            yield f"data: {json.dumps({'type': 'status', 'message': 'Fetching 24h volumes...'})}\n\n"
+            volumes = exchange.get_24h_volumes()
+
+            # Filter pairs
+            active_pairs = [p for p in all_pairs if volumes.get(p, 0) >= min_volume]
+            total = len(active_pairs)
+
+            yield f"data: {json.dumps({'type': 'init', 'total': total, 'exchange': exchange.name})}\n\n"
+
+            results = {
+                'exchange': exchange.name,
+                'timeframe': timeframe,
+                'total_pairs': len(all_pairs),
+                'filtered_pairs': total,
+                'bullish_now': [],
+                'bearish_now': [],
+                'bullish_recent': [],
+                'bearish_recent': [],
+                'errors': []
+            }
+
+            completed = 0
+
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                future_to_symbol = {
+                    executor.submit(scan_symbol, symbol, exchange, timeframe): symbol
+                    for symbol in active_pairs
+                }
+
+                for future in as_completed(future_to_symbol):
+                    symbol = future_to_symbol[future]
+                    completed += 1
+
+                    # Send progress update
+                    yield f"data: {json.dumps({'type': 'progress', 'completed': completed, 'total': total, 'symbol': exchange.display_symbol(symbol)})}\n\n"
+
+                    try:
+                        result = future.result()
+                        if result is None:
+                            continue
+
+                        if result['latest_signal'] == 1:
+                            results['bullish_now'].append(result)
+                        elif result['latest_signal'] == -1:
+                            results['bearish_now'].append(result)
+                        elif result['recent_bullish']:
+                            results['bullish_recent'].append(result)
+                        elif result['recent_bearish']:
+                            results['bearish_recent'].append(result)
+
+                    except Exception as e:
+                        results['errors'].append({'symbol': symbol, 'error': str(e)})
+
+            # Sort results
+            for key in ['bullish_now', 'bearish_now', 'bullish_recent', 'bearish_recent']:
+                results[key] = sorted(results[key], key=lambda x: x.get('display_symbol', x['symbol']))
+
+            # Send final results
+            yield f"data: {json.dumps({'type': 'complete', 'results': results})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return Response(generate(), mimetype='text/event-stream')
 
 
 @app.route('/api/exchanges')
